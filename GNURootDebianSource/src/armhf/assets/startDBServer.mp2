@@ -1,0 +1,7 @@
+#! /bin/bash
+ps -ef | grep dropbear
+if [ $? -eq 0 ]; then
+    exit
+else
+    dropbear
+fi

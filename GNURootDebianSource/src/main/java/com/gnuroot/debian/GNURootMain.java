@@ -37,13 +37,19 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Notification;
+import android.support.v4.app.NotificationCompat;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
@@ -87,7 +93,34 @@ public class GNURootMain extends Activity {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 
+		startPersistentNotification();
         handleIntent(getIntent());
+	}
+
+	private void startPersistentNotification() {
+		int id = Integer.parseInt(new SimpleDateFormat("ddHHmmss", Locale.US).format(new Date()));
+
+		//create a pending intent to send off when the kill action is pressed
+		Intent buttonIntent = new Intent(this, NotificationReceiver.class);
+		buttonIntent.putExtra("notificationId", id);
+		PendingIntent btPendingIntent = PendingIntent.getBroadcast(this, 0, buttonIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+		NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext());
+		builder.setAutoCancel(false);
+		builder.setContentTitle("GNURoot Server Running");
+		//builder.setContentText("Press this notification to kill.");
+		builder.setOngoing(true);
+		builder.setSmallIcon(R.drawable.ic_launcher);
+		//builder.setContentIntent(pendingIntent);
+		builder.addAction(R.drawable.ic_clear_black, "Kill all services", btPendingIntent);
+		builder.setWhen(0);
+		builder.setPriority(Notification.PRIORITY_MAX);
+
+		Notification notification = builder.build();
+		NotificationManager notificationManager =
+				(NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+		//TODO need to find first unused notif id
+		notificationManager.notify(id, notification);
 	}
 
     private void handleIntent(Intent intent) {
@@ -111,8 +144,19 @@ public class GNURootMain extends Activity {
         } else if (intentAction.equals("com.gnuroot.debian.LAUNCH")) {
             noInstallAgain = false;
             handleLaunchIntent(intent);
-        }  else if (intentAction.equals("com.gnuroot.debian.UPDATE_ERROR"))
-            showUpdateErrorButton(intent.getStringExtra("packageName"));
+        } else if (intentAction.equals("com.gnuroot.debian.UPDATE_ERROR")) {
+			showUpdateErrorButton(intent.getStringExtra("packageName"));
+		} else if (intentAction.equals("com.gnuroot.debian.KILL_EVERYTHING")) {
+			/*
+			GNURootMain.this.runOnUiThread(new Runnable() {
+				public void run() {
+					Toast.makeText(getApplicationContext(), "this is a test", Toast.LENGTH_LONG).show();
+				}
+			});
+			*/
+			Toast.makeText(getApplicationContext(), "this is a test", Toast.LENGTH_LONG).show();
+			launchTerm(null);
+		}
         /*
         else if(intentAction == "com.gnuroot.debian.TOAST_ALARM")
             makeAlarmToast(intent);

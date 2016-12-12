@@ -1,0 +1,6 @@
+#!ROOT_PATH/support/busybox sh
+
+ROOT_PATH/support/busybox clear
+
+export DROPBEAR_PASSWORD="gnuroot"
+ROOT_PATH/support/dbclient -t nonroot@localhost '$@; /bin/bash'
