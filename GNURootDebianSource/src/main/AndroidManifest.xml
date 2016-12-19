@@ -54,6 +54,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <intent-filter>
+                <action android:name="com.gnuroot.debian.KILL_EVERYTHING" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
                 <action android:name="com.gnuroot.debian.TOAST_ALARM" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
@@ -110,6 +114,7 @@
         </activity>
         <service android:name="com.gnuroot.debian.GNURootDownloaderService" />
         <receiver android:name="com.gnuroot.debian.GNURootAlarmReceiver" />
+        <receiver android:name=".NotificationReceiver" />
 
         <provider
             android:name="android.support.v4.content.FileProvider"

@@ -3,4 +3,4 @@
 ROOT_PATH/support/busybox clear
 
 export DROPBEAR_PASSWORD="gnuroot"
-ROOT_PATH/support/dbclient -t nonroot@localhost '$@; /bin/bash'
+ROOT_PATH/support/dbclient -yt user@127.0.0.1/2022 "$@"

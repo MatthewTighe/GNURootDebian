@@ -1,7 +1,18 @@
 #! /bin/bash
-ps -ef | grep dropbear
-if [ $? -eq 0 ]; then
-    exit
+
+if id "user" >/dev/null 2>&1; then
+    :
 else
-    dropbear
+    useradd user
+    echo user:gnuroot | chpasswd
+fi
+
+PKG_OK=$(dpkg-query -W --showformat='${Status}\n' dropbear|grep "install ok installed")
+if [ "" == "$PKG_OK" ]; then
+    dpkg --unpack /support/dropbear.deb
+    dropbear &
+    touch /support/.dropbear_running
+else
+    dropbear &
+    touch /support/.dropbear_running
 fi

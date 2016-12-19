@@ -40,6 +40,7 @@ import java.io.OutputStreamWriter;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -93,8 +94,60 @@ public class GNURootMain extends Activity {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 
-		startPersistentNotification();
+		//startDropBearServer();
         handleIntent(getIntent());
+	}
+
+	private boolean checkDropBearServer() {
+		try {
+			Process process = Runtime.getRuntime().exec("ps -ef | grep dropbear");
+			BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+
+			String line;
+			while((line = bufferedReader.readLine()) != null) {
+				if(line.contains("dropbear") && !line.contains("grep"))
+					return true;
+			}
+		}
+		catch (IOException e) {
+			//TODO make this a good string
+			Toast.makeText(getApplicationContext(), "I/O error from command", Toast.LENGTH_SHORT).show();
+		}
+		return false;
+	}
+
+	private void startDropBearServer() {
+
+		try {
+			/*String path = "/usr/games";
+			path = "/usr/local/games" + ":" + path;
+			path = "/bin" + ":" + path;
+			path = "/sbin" + ":" + path;
+			path = "/usr/bin" + ":" + path;
+			path = "/usr/sbin" + ":" + path;
+			path = "/usr/local/bin" + ":" + path;
+			path = "/usr/local/sbin" + ":" + path;
+			ProcessBuilder pb = new ProcessBuilder("ls", getInstallDir().getAbsolutePath() + "/support/"/*,
+					"/support/dbserverscript");
+			Map<String, String> env = pb.environment();
+			env.put("PATH", path);
+			env.put("PS1", "> ");
+			env.put("HOME", "/home");
+			env.put("TMPDIR", "/tmp");
+			env.put("LD_LIBRARY_PATH", " ");
+			env.put("LD_PRELOAD", " ");
+			env.put("USER", "root");
+			Process process = pb.start();
+			*/
+			String[] command = { getInstallDir().getAbsolutePath() + "/support/dbserverscript" };
+			Runtime.getRuntime().exec(command);
+
+		}
+		catch (IOException e) {
+			//TODO make this a good string
+			Toast.makeText(getApplicationContext(), "Error starting dropbear server. Please report this to a developer.", Toast.LENGTH_SHORT).show();
+			Log.e("GNUROOT_DROPBEAR", "Couldn't start server due to exception: " + e);
+		}
 	}
 
 	private void startPersistentNotification() {
@@ -155,14 +208,14 @@ public class GNURootMain extends Activity {
 			});
 			*/
 			Toast.makeText(getApplicationContext(), "this is a test", Toast.LENGTH_LONG).show();
-			launchTerm(null);
+			launchTerm(null, false);
 		}
         /*
         else if(intentAction == "com.gnuroot.debian.TOAST_ALARM")
             makeAlarmToast(intent);
         */
         else
-            launchTerm(null);
+            launchTerm(null, false);
     }
 
 	/**
@@ -193,7 +246,7 @@ public class GNURootMain extends Activity {
 
 		switch (launchType) {
 			case GNUROOT_TERM:
-				launchTerm(command);
+				launchTerm(command, false);
 				return;
 			case GNUROOT_XTERM:
 				launchXTerm(!intent.getBooleanExtra("terminal_button", false), command);
@@ -208,26 +261,49 @@ public class GNURootMain extends Activity {
 	 * Sends an intent to Android Terminal Emulator to launch PRoot, which installs any missing components.
 	 * @param command is the command that will be executed when PRoot launches.
 	 */
-	public void launchTerm(String command) {
-		Intent termIntent = new Intent(this, jackpal.androidterm.RunScript.class);
+	public void launchTerm(final String command, boolean installationStep) {
+		final Intent termIntent = new Intent(this, jackpal.androidterm.RunScript.class);
 		termIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
 		termIntent.addCategory(Intent.CATEGORY_DEFAULT);
 		termIntent.setAction("jackpal.androidterm.RUN_SCRIPT");
-		//if (true)
-		//	termIntent.putExtra("jackpal.androidterm.iInitialCommand",
-		//			getInstallDir().getAbsolutePath() + "/support/busybox sh");
-		//else
-		if(command == null)
-			termIntent.putExtra("jackpal.androidterm.iInitialCommand",
-					getInstallDir().getAbsolutePath() + "/support/launchProot /bin/bash");
-		else
-			termIntent.putExtra("jackpal.androidterm.iInitialCommand",
-					getInstallDir().getAbsolutePath() + "/support/launchProot " + command);
+		if(installationStep) {
+			if (command == null)
+				termIntent.putExtra("jackpal.androidterm.iInitialCommand",
+						getInstallDir().getAbsolutePath() + "/support/launchProot /bin/bash");
+			else
+				termIntent.putExtra("jackpal.androidterm.iInitialCommand",
+						getInstallDir().getAbsolutePath() + "/support/launchProot " + command);
+			checkPatches();
 
-        checkPatches();
+			startActivity(termIntent);
+			finish();
+		}
+		else {
 
-		startActivity(termIntent);
-		finish();
+			final File dropbearStatus = new File(getInstallDir().getAbsolutePath() + "/support/.dropbear_running");
+			dropbearStatus.delete();
+			startDropBearServer();
+			final ScheduledExecutorService scheduler =
+					Executors.newSingleThreadScheduledExecutor();
+			scheduler.scheduleAtFixedRate
+					(new Runnable() {
+						public void run() {
+							if (dropbearStatus.exists()) {
+								if (command == null)
+									termIntent.putExtra("jackpal.androidterm.iInitialCommand",
+											getInstallDir().getAbsolutePath() + "/support/startDBClient /bin/bash");
+								else
+									termIntent.putExtra("jackpal.androidterm.iInitialCommand",
+											getInstallDir().getAbsolutePath() + "/support/startDBClient " + command);
+								checkPatches();
+
+								startActivity(termIntent);
+								scheduler.shutdown();
+							}
+						}
+					}, 3, 2, TimeUnit.SECONDS);
+			finish();
+		}
 	}
 
 	/**
@@ -542,7 +618,7 @@ public class GNURootMain extends Activity {
 		}
 
         if ((savedIntent == null) || (savedIntent.getAction() != "com.gnuroot.debian.LAUNCH"))
-		    launchTerm(null);
+		    launchTerm(null, true);
         else {
             noInstallAgain = true;
             handleIntent(savedIntent);
