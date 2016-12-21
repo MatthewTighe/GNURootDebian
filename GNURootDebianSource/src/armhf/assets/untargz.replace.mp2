@@ -1,9 +1,9 @@
 #!/support/busybox sh
 
 if [ ! -f /host-rootfs/$2 ]; then
-    /support/busybox tar -xzvf $2
+    /support/busybox tar -cxzvf $2 /
 else
-    /support/busybox tar -xzvf /host-rootfs/$2
+    /support/busybox tar -cxzvf /host-rootfs/$2 /
 fi
 
 if [[ $? == 0 ]]; then 

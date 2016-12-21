@@ -42,6 +42,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RunnableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -279,10 +280,11 @@ public class GNURootMain extends Activity {
 			finish();
 		}
 		else {
-
 			final File dropbearStatus = new File(getInstallDir().getAbsolutePath() + "/support/.dropbear_running");
-			dropbearStatus.delete();
+			if(dropbearStatus.exists())
+				dropbearStatus.delete();
 			startDropBearServer();
+			checkPatches(); //Need to check patches outside of scheduler since it runs on a separate thread
 			final ScheduledExecutorService scheduler =
 					Executors.newSingleThreadScheduledExecutor();
 			scheduler.scheduleAtFixedRate
@@ -292,17 +294,17 @@ public class GNURootMain extends Activity {
 								if (command == null)
 									termIntent.putExtra("jackpal.androidterm.iInitialCommand",
 											getInstallDir().getAbsolutePath() + "/support/startDBClient /bin/bash");
+								//getInstallDir().getAbsolutePath() + "/support/busybox sh");
 								else
 									termIntent.putExtra("jackpal.androidterm.iInitialCommand",
 											getInstallDir().getAbsolutePath() + "/support/startDBClient " + command);
-								checkPatches();
 
 								startActivity(termIntent);
+								finish();
 								scheduler.shutdown();
 							}
 						}
-					}, 3, 2, TimeUnit.SECONDS);
-			finish();
+					}, 100, 100, TimeUnit.MILLISECONDS);
 		}
 	}
 
@@ -311,11 +313,49 @@ public class GNURootMain extends Activity {
 	 * status files to be created, and then sending an intent to bVNC.
 	 * @param createNewXTerm determines if a new xterm should be launched regardless of whether one is already active.
 	 */
-	public void launchXTerm(Boolean createNewXTerm, String command) {
+	public void launchXTerm(final Boolean createNewXTerm, String command) {
 		File deleteStarted = new File(getInstallDir().getAbsolutePath() + "/support/.gnuroot_x_started");
 		if (deleteStarted.exists())
 			deleteStarted.delete();
 
+		final File dropbearStatus = new File(getInstallDir().getAbsolutePath() + "/support/.dropbear_running");
+		if(dropbearStatus.exists())
+			dropbearStatus.delete();
+
+		startDropBearServer();
+		checkPatches(); //Need to check patches outside of scheduler since it runs on a separate thread
+
+		final ScheduledExecutorService dbScheduler =
+				Executors.newSingleThreadScheduledExecutor();
+
+		final String cmd;
+		if(command == null)
+			cmd = "/bin/bash";
+		else
+			cmd = command;
+
+		final Intent termIntent = new Intent(this, jackpal.androidterm.RunScript.class);
+		termIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+		termIntent.addCategory(Intent.CATEGORY_DEFAULT);
+		termIntent.setAction("jackpal.androidterm.RUN_SCRIPT");
+
+		dbScheduler.scheduleAtFixedRate
+				(new Runnable() {
+					public void run() {
+						if(dropbearStatus.exists()) {
+							if (createNewXTerm)
+								termIntent.putExtra("jackpal.androidterm.iInitialCommand",
+										getInstallDir().getAbsolutePath() + "/support/launchXterm " + cmd);
+							else
+								// Button presses will not open a new xterm if one is already running.
+								termIntent.putExtra("jackpal.androidterm.iInitialCommand",
+										getInstallDir().getAbsolutePath() + "/support/launchXterm  button_pressed " + cmd);
+							startActivity(termIntent);
+							dbScheduler.shutdown();
+						}
+					}
+				}, 100, 100, TimeUnit.MILLISECONDS);
+		/*
 		Intent termIntent = new Intent(this, jackpal.androidterm.RunScript.class);
 		termIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
 		termIntent.addCategory(Intent.CATEGORY_DEFAULT);
@@ -329,26 +369,28 @@ public class GNURootMain extends Activity {
 			// Button presses will not open a new xterm is one is alrady running.
 			termIntent.putExtra("jackpal.androidterm.iInitialCommand",
 					getInstallDir().getAbsolutePath() + "/support/launchXterm  button_pressed " + command);
+		*/
 
+        //checkPatches();
 
-        checkPatches();
+		//startActivity(termIntent);
 
-		startActivity(termIntent);
+		final File checkRunning = new File(getInstallDir().getAbsolutePath() + "/support/.gnuroot_x_running");
+		if(checkRunning.exists())
+			checkRunning.delete();
 
-		final ScheduledExecutorService scheduler =
+		final ScheduledExecutorService xScheduler =
 				Executors.newSingleThreadScheduledExecutor();
 
-		scheduler.scheduleAtFixedRate
+		xScheduler.scheduleAtFixedRate
 				(new Runnable() {
 					public void run() {
-						File checkStarted = new File(getInstallDir().getAbsolutePath() + "/support/.gnuroot_x_started");
-						File checkRunning = new File(getInstallDir().getAbsolutePath() + "/support/.gnuroot_x_running");
-						if (checkStarted.exists() || checkRunning.exists()) {
+						if (checkRunning.exists()) {
 							Intent bvncIntent = new Intent(getBaseContext(), com.iiordanov.bVNC.RemoteCanvasActivity.class);
 							bvncIntent.setData(Uri.parse("vnc://127.0.0.1:5951/?" + Constants.PARAM_VNC_PWD + "=gnuroot"));
 							bvncIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
 							startActivity(bvncIntent);
-							scheduler.shutdown();
+							xScheduler.shutdown();
 						}
 					}
 				}, 3, 2, TimeUnit.SECONDS); //Avoid race case in which tightvnc needs to be restarted
@@ -847,7 +889,7 @@ public class GNURootMain extends Activity {
 
         if (sharedVersion != null && !sharedVersion.equals(patchVersion)) {
             File patchStatus = new File(getInstallDir().getAbsolutePath() + "/support/.gnuroot_patch_passed");
-            deleteRecursive(patchStatus);
+            patchStatus.delete();
             Toast.makeText(this, R.string.toast_bad_patch, Toast.LENGTH_LONG).show();
         }
 
