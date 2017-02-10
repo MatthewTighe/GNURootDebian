@@ -1,5 +1,7 @@
 #!/bin/bash
 
+touch /support/.tStartX
+
 if [[ "$1" == "button_pressed" ]]; then
     shift
     ps -a | grep xterm
@@ -16,7 +18,6 @@ if [[ $? == 0 ]]; then
     blue='\033[0;34m'; NC='\033[0m'; echo -e "${blue}Killing this terminal will kill your xterm"
     echo -e "${NC}"
     touch /support/.gnuroot_x_running
-    /bin/bash
 else
     rm /tmp/.X51-lock
     rm /tmp/.X11-unix/X51
@@ -28,5 +29,4 @@ else
     blue='\033[0;34m'; NC='\033[0m'; echo -e "${blue}Killing this terminal will kill your vnc server and xterm"
     echo -e "${NC}"
     touch /support/.gnuroot_x_running
-    /bin/bash
 fi

@@ -58,6 +58,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <intent-filter>
+                <action android:name="com.gnuroot.debian.VNC_RECONNECT" />
+                <category android:name="android.intent.category.ALTERNATIVE" />
+            </intent-filter>
+            <intent-filter>
                 <action android:name="com.gnuroot.debian.TOAST_ALARM" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>

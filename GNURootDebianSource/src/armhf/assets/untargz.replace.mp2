@@ -1,9 +1,17 @@
 #!/support/busybox sh
 
-if [ ! -f /host-rootfs/$2 ]; then
-    /support/busybox tar -cxzvf $2 /
+if [ ! -f /support/.gnuroot_rootfs_passed ]; then
+    if [ ! -f /host-rootfs/$2 ]; then
+        /support/busybox tar -xzvf $2
+    else
+        /support/busybox tar -xzvf /host-rootfs/$2
+    fi
 else
-    /support/busybox tar -cxzvf /host-rootfs/$2 /
+    if [ ! -f /host-rootfs/$2 ]; then
+        /support/busybox tar -xzvf $2 -C /
+    else
+        /support/busybox tar -xzvf /host-rootfs/$2 -C /
+    fi
 fi
 
 if [[ $? == 0 ]]; then 

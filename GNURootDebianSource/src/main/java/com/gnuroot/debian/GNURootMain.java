@@ -49,6 +49,7 @@ import java.util.concurrent.TimeUnit;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Notification;
+import android.service.notification.NotificationListenerService;
 import android.support.v4.app.NotificationCompat;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -95,7 +96,9 @@ public class GNURootMain extends Activity {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 
-		//startDropBearServer();
+        SharedPreferences prefs = getSharedPreferences("MAIN", MODE_PRIVATE);
+        if(!prefs.getBoolean("GNURoot Service Notification Active", false))
+            startPersistentNotification("GNURoot Service");
         handleIntent(getIntent());
 	}
 
@@ -151,30 +154,70 @@ public class GNURootMain extends Activity {
 		}
 	}
 
-	private void startPersistentNotification() {
+	private void startPersistentNotification(String type) {
 		int id = Integer.parseInt(new SimpleDateFormat("ddHHmmss", Locale.US).format(new Date()));
+
+        //Store current notification IDs so that we don't keep regenerating them.
+        SharedPreferences prefs = getSharedPreferences("MAIN", MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
 
 		//create a pending intent to send off when the kill action is pressed
 		Intent buttonIntent = new Intent(this, NotificationReceiver.class);
 		buttonIntent.putExtra("notificationId", id);
-		PendingIntent btPendingIntent = PendingIntent.getBroadcast(this, 0, buttonIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
 		NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext());
-		builder.setAutoCancel(false);
-		builder.setContentTitle("GNURoot Server Running");
-		//builder.setContentText("Press this notification to kill.");
-		builder.setOngoing(true);
-		builder.setSmallIcon(R.drawable.ic_launcher);
-		//builder.setContentIntent(pendingIntent);
-		builder.addAction(R.drawable.ic_clear_black, "Kill all services", btPendingIntent);
-		builder.setWhen(0);
-		builder.setPriority(Notification.PRIORITY_MAX);
+		switch(type) {
+			case "GNURoot Service": {
+                //For these pending intents to be treated differently, they need to have something
+                //differentiating them according to Intent.filterEquals. In this case, the categories
+                //are arbitrarily assigned to be different.
+				buttonIntent.putExtra("notificationType", "GNURoot Service");
+                buttonIntent.addCategory(Intent.CATEGORY_DEFAULT);
+				PendingIntent btPendingIntent = PendingIntent.getBroadcast(this, 0, buttonIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+				builder.setAutoCancel(false);
+				builder.setContentTitle("GNURoot Service Running");
+				//builder.setContentText("Press this notification to kill.");
+				builder.setOngoing(true);
+				builder.setSmallIcon(R.drawable.ic_launcher);
+				//builder.setContentIntent(pendingIntent);
+				builder.addAction(R.drawable.ic_clear_black, "Kill all services", btPendingIntent);
+				builder.setWhen(0);
+				builder.setPriority(Notification.PRIORITY_MAX);
+				builder.setGroup("Main"); //This avoids notification stacking
+
+                editor.putBoolean("GNURoot Service Notification Active", true);
+                editor.commit();
+				break;
+			}
+
+			case "VNC Service": {
+				buttonIntent.putExtra("notificationType", "VNC Service");
+                buttonIntent.addCategory(Intent.CATEGORY_ALTERNATIVE);
+				PendingIntent btPendingIntent = PendingIntent.getBroadcast(this, 0, buttonIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+				builder.setContentIntent(btPendingIntent);
+				builder.setAutoCancel(false);
+				builder.setContentTitle("VNC Service Running");
+				builder.setOngoing(true);
+				builder.setSmallIcon(R.drawable.xterm);
+				builder.setWhen(0);
+				builder.setPriority(Notification.PRIORITY_HIGH);
+				builder.setGroup("VNC"); //This avoids notification stacking
+
+                editor.putBoolean("VNC Service Notification Active", true);
+                editor.commit();
+				break;
+			}
+		}
 
 		Notification notification = builder.build();
 		NotificationManager notificationManager =
 				(NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		//TODO need to find first unused notif id
 		notificationManager.notify(id, notification);
+
+
 	}
 
     private void handleIntent(Intent intent) {
@@ -201,15 +244,18 @@ public class GNURootMain extends Activity {
         } else if (intentAction.equals("com.gnuroot.debian.UPDATE_ERROR")) {
 			showUpdateErrorButton(intent.getStringExtra("packageName"));
 		} else if (intentAction.equals("com.gnuroot.debian.KILL_EVERYTHING")) {
-			/*
-			GNURootMain.this.runOnUiThread(new Runnable() {
-				public void run() {
-					Toast.makeText(getApplicationContext(), "this is a test", Toast.LENGTH_LONG).show();
-				}
-			});
-			*/
 			Toast.makeText(getApplicationContext(), "this is a test", Toast.LENGTH_LONG).show();
-			launchTerm(null, false);
+			SharedPreferences prefs = getSharedPreferences("MAIN", MODE_PRIVATE);
+            SharedPreferences.Editor editor = prefs.edit();
+            editor.putBoolean("VNC Service Notification Active", false);
+            editor.putBoolean("GNURoot Service Notification Active", false);
+            editor.commit();
+            cancelNotifications(this);
+            android.os.Process.killProcess(android.os.Process.myPid());
+            finish();
+
+		} else if (intentAction.equals("com.gnuroot.debian.VNC_RECONNECT")) {
+			connectVNC();
 		}
         /*
         else if(intentAction == "com.gnuroot.debian.TOAST_ALARM")
@@ -334,15 +380,33 @@ public class GNURootMain extends Activity {
 		else
 			cmd = command;
 
+        /*
 		final Intent termIntent = new Intent(this, jackpal.androidterm.RunScript.class);
 		termIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
 		termIntent.addCategory(Intent.CATEGORY_DEFAULT);
 		termIntent.setAction("jackpal.androidterm.RUN_SCRIPT");
+        */
+
+		final File checkRunning = new File(getInstallDir().getAbsolutePath() + "/support/.gnuroot_x_running");
+		if(checkRunning.exists()) checkRunning.delete();
 
 		dbScheduler.scheduleAtFixedRate
 				(new Runnable() {
 					public void run() {
 						if(dropbearStatus.exists()) {
+                            String command;
+                            if(createNewXTerm)
+                                command = getInstallDir().getAbsolutePath() + "/support/launchXterm " + cmd;
+                            else
+                                command = getInstallDir().getAbsolutePath() + "/support/launchXterm button_pressed " + cmd;
+                            try {
+                                Runtime.getRuntime().exec(command);
+                            }
+                            catch (IOException e) {
+                                //TODO do something here
+                                System.out.println(e);
+                            }
+                            /*
 							if (createNewXTerm)
 								termIntent.putExtra("jackpal.androidterm.iInitialCommand",
 										getInstallDir().getAbsolutePath() + "/support/launchXterm " + cmd);
@@ -351,6 +415,7 @@ public class GNURootMain extends Activity {
 								termIntent.putExtra("jackpal.androidterm.iInitialCommand",
 										getInstallDir().getAbsolutePath() + "/support/launchXterm  button_pressed " + cmd);
 							startActivity(termIntent);
+							*/
 							dbScheduler.shutdown();
 						}
 					}
@@ -375,9 +440,31 @@ public class GNURootMain extends Activity {
 
 		//startActivity(termIntent);
 
+		final ScheduledExecutorService xScheduler =
+				Executors.newSingleThreadScheduledExecutor();
+
+		xScheduler.scheduleAtFixedRate
+				(new Runnable() {
+					public void run() {
+						if (checkRunning.exists()) {
+							Intent bvncIntent = new Intent(getBaseContext(), com.iiordanov.bVNC.RemoteCanvasActivity.class);
+							bvncIntent.setData(Uri.parse("vnc://127.0.0.1:5951/?" + Constants.PARAM_VNC_PWD + "=gnuroot"));
+							bvncIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                            SharedPreferences prefs = getSharedPreferences("MAIN", MODE_PRIVATE);
+                            if(!prefs.getBoolean("VNC Service Notification Active", false))
+							    startPersistentNotification("VNC Service");
+							startActivity(bvncIntent);
+							xScheduler.shutdown();
+						}
+					}
+				}, 3, 2, TimeUnit.SECONDS); //Avoid race case in which tightvnc needs to be restarted
+
+		finish();
+
+	}
+
+	private void connectVNC() {
 		final File checkRunning = new File(getInstallDir().getAbsolutePath() + "/support/.gnuroot_x_running");
-		if(checkRunning.exists())
-			checkRunning.delete();
 
 		final ScheduledExecutorService xScheduler =
 				Executors.newSingleThreadScheduledExecutor();
@@ -389,13 +476,12 @@ public class GNURootMain extends Activity {
 							Intent bvncIntent = new Intent(getBaseContext(), com.iiordanov.bVNC.RemoteCanvasActivity.class);
 							bvncIntent.setData(Uri.parse("vnc://127.0.0.1:5951/?" + Constants.PARAM_VNC_PWD + "=gnuroot"));
 							bvncIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+							startPersistentNotification("VNC Service");
 							startActivity(bvncIntent);
 							xScheduler.shutdown();
 						}
 					}
 				}, 3, 2, TimeUnit.SECONDS); //Avoid race case in which tightvnc needs to be restarted
-
-		finish();
 	}
 
 	/**
@@ -448,12 +534,12 @@ public class GNURootMain extends Activity {
 		builder.create().show();
 	}
 
-	/*
-	TODO This was going to be used to check status files.
-	private void makeAlarmToast(Intent intent) {
-	  	String alarmName = intent.getStringExtra("alarmName");
-	 	Toast.makeText(this, alarmName + "... Please wait for completion.", Toast.LENGTH_LONG).show();
-	}
+	/** TODO
+	 * 	This was going to be used to check status files.
+	 * private void makeAlarmToast(Intent intent) {
+	 * String alarmName = intent.getStringExtra("alarmName");
+	 * Toast.makeText(this, alarmName + "... Please wait for completion.", Toast.LENGTH_LONG).show();
+	 * }
 	 */
 
 	/**
@@ -887,12 +973,14 @@ public class GNURootMain extends Activity {
             Toast.makeText(getApplicationContext(), R.string.toast_bad_package, Toast.LENGTH_LONG).show();
         }
 
+
         if (sharedVersion != null && !sharedVersion.equals(patchVersion)) {
             File patchStatus = new File(getInstallDir().getAbsolutePath() + "/support/.gnuroot_patch_passed");
             patchStatus.delete();
             Toast.makeText(this, R.string.toast_bad_patch, Toast.LENGTH_LONG).show();
         }
 
+        //patchVersion="sd";
 		if ((sharedVersion == null) || (!sharedVersion.equals(patchVersion))) {
 			    setupSupportFiles(false);
 			try {
